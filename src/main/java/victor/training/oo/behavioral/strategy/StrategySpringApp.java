@@ -1,24 +1,26 @@
 package victor.training.oo.behavioral.strategy;
 
+import static java.util.Arrays.asList;
+
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.config.ServiceLocatorFactoryBean;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.stereotype.Service;
-
-import java.util.Arrays;
-import java.util.List;
 
 @SpringBootApplication
 public class StrategySpringApp implements CommandLineRunner {
 	public static void main(String[] args) {
 		new SpringApplicationBuilder(StrategySpringApp.class)
-			.profiles("localProps")
-			.run(args);
+				.profiles("localProps")
+				.run(args);
 	}
 
-	
-	private ConfigProvider configProvider = new ConfigFileProvider(); 
+
+	private ConfigProvider configProvider = new ConfigFileProvider();
 	@Autowired
 	private CustomsService service;
 
@@ -37,53 +39,58 @@ public class StrategySpringApp implements CommandLineRunner {
 
 @Service
 class CustomsService {
+	@Autowired
+	private TaxCalculatorLocator taxCalculatorLocator;
+
 	public double computeCustomsTax(String originCountry, double tobacoValue, double regularValue) { // UGLY API we CANNOT change
 		TaxCalculator a = selectTaxCalculator(originCountry);
 		return a.compute(tobacoValue, regularValue);
 	}
 
-	@Autowired
-	private List<TaxCalculator> calculators;
-
 	private TaxCalculator selectTaxCalculator(String originCountry) {
-
-		return calculators.stream()
-				.filter(c -> c.canHandle(originCountry))
-				.findFirst()
-				.orElseThrow(() ->new IllegalArgumentException("Not a valid country ISO2 code: " + originCountry));
-
+		return taxCalculatorLocator.locate(isEu(originCountry) ? "EU" :  originCountry);
 	}
 
+	private boolean isEu(String originCountry) {
+		return asList("FR","ES","RO","NL").contains(originCountry);
+	}
 }
+
+@Configuration
+class TaxCalculatorConfiguration {
+	@Bean
+	protected ServiceLocatorFactoryBean taxCalculatorLocatorFactoryBean() {
+		final ServiceLocatorFactoryBean bean = new ServiceLocatorFactoryBean();
+		bean.setServiceLocatorInterface(TaxCalculatorLocator.class);
+		return bean;
+	}
+}
+
+
 interface TaxCalculator {
-	boolean canHandle(String originCountry);
 	double compute(double tobacoValue, double regularValue);
 }
-@Service
-class ChinaTaxCalculator implements TaxCalculator {
-	public boolean canHandle(String originCountry) {
-		return "CN".equals(originCountry);
-	}
 
+interface TaxCalculatorLocator {
+	TaxCalculator locate(String type);
+}
+
+@Service("CN")
+class CNTaxCalculator implements TaxCalculator {
 	public double compute(double tobacoValue, double regularValue) {
 		return tobacoValue + regularValue;
 	}
 }
-@Service
+
+@Service("UK")
 class UKTaxCalculator implements TaxCalculator {
-	public boolean canHandle(String originCountry) {
-		return "UK".equals(originCountry);
-	}
 	public double compute(double tobacoValue, double regularValue) {
 		return tobacoValue/2 + regularValue/2;
 	}
 }
-@Service
-class EUTaxCalculator implements TaxCalculator {
-	public boolean canHandle(String originCountry) {
-		return Arrays.asList("FR","ES","RO","NL").contains(originCountry);
-	}
 
+@Service("EU")
+class EUTaxCalculator implements TaxCalculator {
 	public double compute(double tobacoValue, double regularValue) {
 		return tobacoValue/3;
 	}
